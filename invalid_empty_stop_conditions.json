@@ -1,0 +1,51 @@
+{
+  "schema_version": "0.1",
+  "work_order_id": "WO-GATE0-001",
+  "execution_slice_id": "ES-GATE0-001",
+  "objective": "Implement the deterministic AIBS Execution Slice validator.",
+  "repository": {
+    "identifier": "owner/aibs-gate0-sandbox",
+    "base_commit": "0123456789abcdef0123456789abcdef01234567"
+  },
+  "scope": {
+    "allowed_paths": [
+      "tools/validate_execution_slice.py"
+    ],
+    "forbidden_paths": [
+      "GOVERNANCE.md",
+      ".github/**",
+      "secrets/**"
+    ]
+  },
+  "acceptance": {
+    "commands": [
+      "python -m pytest -q"
+    ],
+    "must_pass": true
+  },
+  "timebox": {
+    "max_minutes": 30
+  },
+  "stop_conditions": [],
+  "authority": {
+    "merge_accepted_state": false,
+    "deploy_production": false,
+    "modify_secrets": false,
+    "external_communications": false,
+    "unapproved_spend": false,
+    "scope_expansion": false
+  },
+  "checkpoint": {
+    "required": true,
+    "required_fields": [
+      "completed_work",
+      "tests_run",
+      "remaining_failures",
+      "discoveries",
+      "base_commit",
+      "candidate_commit",
+      "next_action",
+      "status"
+    ]
+  }
+}
