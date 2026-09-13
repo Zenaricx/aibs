@@ -215,7 +215,7 @@ def main(argv=None):
             print(f"ERROR: {error}", file=sys.stderr)
         return EXIT_VALIDATION_ERROR
 
-    print("PASS: valid AIBS Execution Slice contract")
+    print("VALID: valid AIBS Execution Slice contract")
     return 0
 
 
