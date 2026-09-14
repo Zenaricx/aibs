@@ -32,6 +32,9 @@ transitions to `FAILED`; an unsafe verification condition quarantines the run.
 An identity mismatch with the admitted slice leaves the existing admission and
 lock intact for investigation.
 
+Verification evidence is durably stored as external `verification.json` and is
+bound to the admitted run and slice hash.
+
 ## Controlled dispatch handoff
 
 Before authorised implementation activity begins, prepare the immutable task
@@ -48,3 +51,20 @@ This requires the candidate to remain clean at the authorised base and records
 one `dispatch.json` outside the repository. The packet is hash-bound to the
 admitted slice and contains only the task bounds needed by an implementation
 harness. Retrying the exact same dispatch is safe; replacing it is rejected.
+
+## Owner review and acceptance
+
+After verification passes, an authorised owner records one evidence-bound
+decision:
+
+```text
+python tools/aibs_record_review.py \
+  --state-root path/to/external-state \
+  --run-id approved-run-id \
+  --reviewer owner-identity \
+  --decision accept
+```
+
+Only `PASSED` verification evidence for the same run and slice can be accepted
+or rejected. The decision is stored as immutable external `review.json` and
+the lifecycle moves through `OWNER_ACCEPTANCE` to `ACCEPTED` or `REJECTED`.

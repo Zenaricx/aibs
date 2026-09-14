@@ -9,10 +9,13 @@ from pathlib import Path
 from controller.git_candidate import GitCandidateError, create_candidate, repository_identity_matches
 from controller.execution import ExecutionError, acceptance_passed, changed_paths, run_acceptance_commands, validate_changed_paths
 from controller.dispatch import DispatchError, build_dispatch, dispatch_hash, persist_dispatch
+from controller.evidence import build_verification_evidence, load_verification_evidence, persist_verification_evidence
+from controller.review import ReviewError, build_review_record
 from controller.lifecycle import InvalidTransition, LifecycleState, transition
 from controller.state_store import LockError, StateStore, StateStoreError, freeze_execution_slice
 from tools.aibs_controller import _load_validated_slice, main, validate_operational_paths
 from tools.aibs_verify_candidate import main as verify_candidate
+from tools.aibs_record_review import main as record_review
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -371,6 +374,7 @@ class ControllerFoundationTests(unittest.TestCase):
         self.assertEqual(verify_candidate([str(slice_path), "--state-root", str(state), "--candidate-worktree", str(repo), "--run-id", "r"]), 0)
         self.assertEqual(StateStore(state).read()["state"], "REVIEW_REQUIRED")
         self.assertFalse((state / "active-run.lock").exists())
+        self.assertEqual(load_verification_evidence(state)["outcome"], "PASSED")
 
     def test_candidate_verification_records_failed_acceptance(self):
         repo, _ = self.init_repo()
@@ -422,6 +426,45 @@ class ControllerFoundationTests(unittest.TestCase):
         replacement["run_id"] = "different"
         with self.assertRaisesRegex(DispatchError, "different dispatch"):
             persist_dispatch(state, replacement)
+
+    def test_owner_acceptance_requires_passing_evidence_and_records_decision(self):
+        repo, _ = self.init_repo()
+        (repo / "file.txt").write_text("candidate change\n", encoding="utf-8")
+        document = self.sample_slice()
+        document["scope"]["allowed_paths"] = ["file.txt"]
+        document["acceptance"]["commands"] = ["echo verified"]
+        state, slice_path = self.prepare_admitted_verification(repo, document)
+        self.assertEqual(verify_candidate([str(slice_path), "--state-root", str(state), "--candidate-worktree", str(repo), "--run-id", "r"]), 0)
+        self.assertEqual(record_review(["--state-root", str(state), "--run-id", "r", "--reviewer", "owner", "--decision", "accept"]), 0)
+        self.assertEqual(StateStore(state).read()["state"], "ACCEPTED")
+        review = json.loads((state / "review.json").read_text(encoding="utf-8"))
+        self.assertEqual(review["reviewer"], "owner")
+        self.assertEqual(review["decision"], "accept")
+
+    def test_review_rejects_non_passing_evidence(self):
+        record = self.valid_record()
+        record["state"] = "REVIEW_REQUIRED"
+        evidence = build_verification_evidence(record, "FAILED", [], [])
+        with self.assertRaisesRegex(ReviewError, "only passing"):
+            build_review_record(record, evidence, "owner", "accept")
+
+    def test_owner_decision_resumes_from_owner_acceptance(self):
+        repo, _ = self.init_repo()
+        (repo / "file.txt").write_text("candidate change\n", encoding="utf-8")
+        document = self.sample_slice()
+        document["scope"]["allowed_paths"] = ["file.txt"]
+        document["acceptance"]["commands"] = ["echo verified"]
+        state, slice_path = self.prepare_admitted_verification(repo, document)
+        self.assertEqual(verify_candidate([str(slice_path), "--state-root", str(state), "--candidate-worktree", str(repo), "--run-id", "r"]), 0)
+        store = StateStore(state)
+        record = store.read()
+        evidence = load_verification_evidence(state)
+        review = build_review_record(record, evidence, "owner", "accept")
+        from controller.review import persist_review_record
+        persist_review_record(state, review)
+        store.transition(record, LifecycleState.OWNER_ACCEPTANCE, timestamp="t")
+        self.assertEqual(record_review(["--state-root", str(state), "--run-id", "r", "--reviewer", "owner", "--decision", "accept"]), 0)
+        self.assertEqual(StateStore(state).read()["state"], "ACCEPTED")
 
 
 if __name__ == "__main__":

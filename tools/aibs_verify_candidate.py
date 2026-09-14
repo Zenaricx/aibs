@@ -14,12 +14,16 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from controller.execution import acceptance_passed, changed_paths, run_acceptance_commands, validate_changed_paths
+from controller.evidence import build_verification_evidence, persist_verification_evidence, verification_hash
 from controller.lifecycle import LifecycleState
 from controller.state_store import StateStore, StateStoreError, freeze_execution_slice
 
 
-def _output(record: dict, paths: list[str], evidence: list[dict]) -> None:
-    print(json.dumps({"state": record["state"], "changed_paths": paths, "acceptance": evidence}, sort_keys=True))
+def _output(record: dict, paths: list[str], evidence: list[dict], verification_digest: str | None = None) -> None:
+    payload = {"state": record["state"], "changed_paths": paths, "acceptance": evidence}
+    if verification_digest:
+        payload["verification_hash"] = verification_digest
+    print(json.dumps(payload, sort_keys=True))
 
 
 def main(argv=None) -> int:
@@ -50,14 +54,18 @@ def main(argv=None) -> int:
         evidence = run_acceptance_commands(args.candidate_worktree, document["acceptance"]["commands"])
         serialised = [item.as_dict() for item in evidence]
         if not acceptance_passed(evidence):
+            persisted = build_verification_evidence(record, "FAILED", paths, serialised)
+            persist_verification_evidence(args.state_root, persisted)
             record = store.transition(record, LifecycleState.FAILED, timestamp=datetime.now(timezone.utc).isoformat())
             store.release(args.run_id)
-            _output(record, paths, serialised)
+            _output(record, paths, serialised, verification_hash(persisted))
             return 1
+        persisted = build_verification_evidence(record, "PASSED", paths, serialised)
+        persist_verification_evidence(args.state_root, persisted)
         record = store.transition(record, LifecycleState.CANDIDATE_READY, timestamp=datetime.now(timezone.utc).isoformat())
         record = store.transition(record, LifecycleState.REVIEW_REQUIRED, timestamp=datetime.now(timezone.utc).isoformat())
         store.release(args.run_id)
-        _output(record, paths, serialised)
+        _output(record, paths, serialised, verification_hash(persisted))
         return 0
     except Exception:
         try:
