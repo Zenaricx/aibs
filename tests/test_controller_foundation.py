@@ -8,6 +8,7 @@ from pathlib import Path
 
 from controller.git_candidate import GitCandidateError, create_candidate, repository_identity_matches
 from controller.execution import ExecutionError, acceptance_passed, changed_paths, run_acceptance_commands, validate_changed_paths
+from controller.dispatch import DispatchError, build_dispatch, dispatch_hash, persist_dispatch
 from controller.lifecycle import InvalidTransition, LifecycleState, transition
 from controller.state_store import LockError, StateStore, StateStoreError, freeze_execution_slice
 from tools.aibs_controller import _load_validated_slice, main, validate_operational_paths
@@ -348,7 +349,9 @@ class ControllerFoundationTests(unittest.TestCase):
         state = self.root / "state"
         store = StateStore(state)
         record = self.valid_record()
-        record["authorised_base_commit"] = git(repo, "rev-parse", "HEAD")
+        base_commit = git(repo, "rev-parse", "HEAD")
+        document["repository"]["base_commit"] = base_commit
+        record["authorised_base_commit"] = base_commit
         record["execution_slice_hash"] = freeze_execution_slice(document)[0]
         store.acquire("r")
         store.write(record)
@@ -388,6 +391,37 @@ class ControllerFoundationTests(unittest.TestCase):
             verify_candidate([str(slice_path), "--state-root", str(state), "--candidate-worktree", str(repo), "--run-id", "r"])
         self.assertEqual(StateStore(state).read()["state"], "ADMITTED")
         self.assertTrue((state / "active-run.lock").exists())
+
+    def test_dispatch_packet_is_hash_bound_and_minimal(self):
+        repo, _ = self.init_repo()
+        document = self.sample_slice()
+        state, _ = self.prepare_admitted_verification(repo, document)
+        packet = build_dispatch(document, StateStore(state).read(), repo)
+        self.assertEqual(packet["run_id"], "r")
+        self.assertEqual(packet["repository"]["candidate_worktree"], str(repo.resolve()))
+        self.assertEqual(packet["task"]["objective"], document["objective"])
+        self.assertEqual(packet["execution_slice_hash"], freeze_execution_slice(document)[0])
+        self.assertEqual(len(dispatch_hash(packet)), 64)
+
+    def test_dispatch_requires_an_unchanged_admitted_candidate(self):
+        repo, _ = self.init_repo()
+        document = self.sample_slice()
+        state, _ = self.prepare_admitted_verification(repo, document)
+        (repo / "file.txt").write_text("changed\n", encoding="utf-8")
+        with self.assertRaisesRegex(DispatchError, "not clean"):
+            build_dispatch(document, StateStore(state).read(), repo)
+
+    def test_dispatch_persistence_is_idempotent_but_cannot_be_replaced(self):
+        repo, _ = self.init_repo()
+        document = self.sample_slice()
+        state, _ = self.prepare_admitted_verification(repo, document)
+        packet = build_dispatch(document, StateStore(state).read(), repo)
+        first = persist_dispatch(state, packet)
+        self.assertEqual(persist_dispatch(state, packet), first)
+        replacement = dict(packet)
+        replacement["run_id"] = "different"
+        with self.assertRaisesRegex(DispatchError, "different dispatch"):
+            persist_dispatch(state, replacement)
 
 
 if __name__ == "__main__":

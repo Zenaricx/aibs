@@ -31,3 +31,20 @@ the run to `REVIEW_REQUIRED` only when acceptance succeeds. A failed acceptance
 transitions to `FAILED`; an unsafe verification condition quarantines the run.
 An identity mismatch with the admitted slice leaves the existing admission and
 lock intact for investigation.
+
+## Controlled dispatch handoff
+
+Before authorised implementation activity begins, prepare the immutable task
+packet:
+
+```text
+python tools/aibs_prepare_dispatch.py path/to/execution-slice.json \
+  --state-root path/to/external-state \
+  --candidate-worktree path/to/candidate-worktree \
+  --run-id approved-run-id
+```
+
+This requires the candidate to remain clean at the authorised base and records
+one `dispatch.json` outside the repository. The packet is hash-bound to the
+admitted slice and contains only the task bounds needed by an implementation
+harness. Retrying the exact same dispatch is safe; replacing it is rejected.
