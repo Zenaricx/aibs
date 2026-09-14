@@ -60,9 +60,10 @@ def ingest_checkpoint(state_root: str | Path, envelope: dict) -> dict:
     if path.exists():
         try: old = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as exc: raise StateStoreError("checkpoint evidence is unreadable") from exc
-        if old.get("sequence", 0) > envelope["sequence"]: raise CheckpointError("stale checkpoint")
-        if old.get("sequence") == envelope["sequence"]:
+        if old.get("sequence", 0) >= envelope["sequence"]:
+            if old.get("sequence") > envelope["sequence"]: raise CheckpointError("stale checkpoint")
             if canonical_json_bytes(old) == canonical_json_bytes(envelope): return old
             raise CheckpointError("checkpoint sequence conflict")
+        if envelope["sequence"] != old.get("sequence", 0) + 1: raise CheckpointError("checkpoint sequence skipped")
     store.write_evidence("checkpoint.json", envelope)
     return envelope

@@ -20,5 +20,8 @@ class HandoffTests(unittest.TestCase):
     def test_sequence_conflict_rejected(self):
         ingest_checkpoint(self.root,self.env()); e=self.env(); e["checkpoint"]["next_action"]="different"
         with self.assertRaises(CheckpointError): ingest_checkpoint(self.root,e)
+    def test_skipped_sequence_rejected(self):
+        ingest_checkpoint(self.root,self.env())
+        with self.assertRaises(CheckpointError): ingest_checkpoint(self.root,self.env(3))
 
 if __name__ == '__main__': unittest.main()

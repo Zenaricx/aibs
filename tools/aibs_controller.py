@@ -20,6 +20,7 @@ from controller.git_candidate import create_candidate
 from controller.lifecycle import LifecycleState
 from controller.state_store import StateStore, freeze_execution_slice
 from controller.handoff import dispatch_packet, ingest_checkpoint
+from controller.verification import execute_and_verify
 
 
 def validate_operational_paths(repository: Path, state_root: Path, candidate_worktree: Path) -> None:
@@ -104,6 +105,9 @@ def main(argv=None) -> int:
         args = parser.parse_args(argv)
         envelope = json.loads(args.checkpoint_json.read_text(encoding="utf-8"))
         ingest_checkpoint(args.state_root, envelope); print("PASS: checkpoint ingested"); return 0
+    if argv and argv[0] == "execute":
+        parser = argparse.ArgumentParser(); parser.add_argument("execute"); parser.add_argument("--state-root", required=True, type=Path)
+        args = parser.parse_args(argv); print(json.dumps(execute_and_verify(args.state_root), sort_keys=True)); return 0
     parser = argparse.ArgumentParser(description="AIBS Phase A controller foundation")
     parser.add_argument("slice_json", type=Path)
     parser.add_argument("--repository", required=True, type=Path)

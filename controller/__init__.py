@@ -9,6 +9,7 @@ from .state_store import (
     freeze_execution_slice,
     validate_lifecycle_record,
 )
+from .verification import VerificationError, execute_and_verify, verify_candidate
 
 __all__ = [
     "InvalidTransition",
