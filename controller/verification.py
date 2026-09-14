@@ -38,13 +38,15 @@ def verify_candidate(record: dict, slice_document: dict) -> dict:
 
 def execute_and_verify(state_root: str | Path) -> dict:
     store=StateStore(state_root); record=store.read()
-    if record["state"] != LifecycleState.ADMITTED.value: raise VerificationError("run is not ADMITTED")
+    if record["state"] not in (LifecycleState.ADMITTED.value, LifecycleState.INTERRUPTED.value):
+        raise VerificationError("run is not ADMITTED or INTERRUPTED")
     frozen=Path(state_root)/"execution-slice.json"
     document=json.loads(frozen.read_text(encoding="utf-8"))
     from .state_store import freeze_execution_slice
     digest,_=freeze_execution_slice(document)
     if digest != record["execution_slice_hash"]: raise VerificationError("frozen Execution Slice hash mismatch")
-    record=store.transition(record,LifecycleState.RUNNING,timestamp="execution-start")
+    if record["state"] == LifecycleState.ADMITTED.value:
+        record=store.transition(record,LifecycleState.RUNNING,timestamp="execution-start")
     try:
         record=store.transition(record,LifecycleState.VERIFYING,timestamp="verification-start")
         result=verify_candidate(record,document)
@@ -54,7 +56,7 @@ def execute_and_verify(state_root: str | Path) -> dict:
         record=store.transition(record,LifecycleState.CANDIDATE_READY,timestamp="verification-pass")
         return result
     except KeyboardInterrupt:
-        store.transition(record,LifecycleState.INTERRUPTED,timestamp="execution-interrupted")
+        store.transition(record,LifecycleState.QUARANTINED,timestamp="verification-interrupted")
         raise
     except Exception as exc:
         store.write_evidence("verification-failure.json", {"status":"FAILED", "error":str(exc)})

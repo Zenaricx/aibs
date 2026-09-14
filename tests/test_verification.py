@@ -23,5 +23,9 @@ class VerificationTests(unittest.TestCase):
         (self.candidate/'secret.txt').write_text('x\n'); subprocess.run(['git','-C',str(self.candidate),'add','.']); subprocess.run(['git','-C',str(self.candidate),'commit','-qm','bad'])
         with self.assertRaises(VerificationError): execute_and_verify(self.state)
         self.assertEqual(StateStore(self.state).read()['state'],'FAILED')
+    def test_interrupted_run_can_recover_to_candidate_ready(self):
+        store=StateStore(self.state); record=store.read(); record=store.transition(record,'RUNNING',timestamp='t'); store.transition(record,'INTERRUPTED',timestamp='t')
+        execute_and_verify(self.state)
+        self.assertEqual(StateStore(self.state).read()['state'],'CANDIDATE_READY')
 
 if __name__=='__main__': unittest.main()
