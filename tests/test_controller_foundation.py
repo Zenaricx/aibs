@@ -19,6 +19,7 @@ from tools.aibs_controller import _load_validated_slice, main, validate_operatio
 from tools.aibs_verify_candidate import main as verify_candidate
 from tools.aibs_record_review import main as record_review
 from tools.aibs_seal_candidate import main as seal_candidate_tool
+from tools.aibs import main as aibs_cli
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -492,6 +493,12 @@ class ControllerFoundationTests(unittest.TestCase):
         with self.assertRaises(StatusError):
             read_run_status(state)
         self.assertFalse(state.exists())
+
+    def test_unified_cli_routes_status_without_changing_behavior(self):
+        state = self.root / "state"
+        store = StateStore(state)
+        store.write(self.valid_record())
+        self.assertEqual(aibs_cli(["status", "--state-root", str(state), "--run-id", "r"]), 0)
 
     def test_accepted_candidate_is_sealed_to_a_local_branch_and_commit(self):
         repo, _ = self.init_repo()
