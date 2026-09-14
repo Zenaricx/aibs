@@ -20,7 +20,36 @@ from aibs_status import main as status
 from aibs_verify_candidate import main as verify
 
 
+def start(argv) -> int:
+    """Admit a slice and immediately create its immutable dispatch packet."""
+
+    parser = argparse.ArgumentParser(prog="aibs start", description="Start an AIBS run")
+    parser.add_argument("slice_json")
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--state-root", required=True)
+    parser.add_argument("--candidate-worktree", required=True)
+    parser.add_argument("--run-id", required=True)
+    args = parser.parse_args(argv)
+    admission_args = [
+        args.slice_json,
+        "--repository", args.repository,
+        "--state-root", args.state_root,
+        "--candidate-worktree", args.candidate_worktree,
+        "--run-id", args.run_id,
+    ]
+    outcome = admit(admission_args)
+    if outcome:
+        return outcome
+    return prepare_dispatch([
+        args.slice_json,
+        "--state-root", args.state_root,
+        "--candidate-worktree", args.candidate_worktree,
+        "--run-id", args.run_id,
+    ])
+
+
 COMMANDS = {
+    "start": start,
     "admit": admit,
     "prepare-dispatch": prepare_dispatch,
     "verify": verify,

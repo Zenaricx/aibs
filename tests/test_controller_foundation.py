@@ -503,6 +503,21 @@ class ControllerFoundationTests(unittest.TestCase):
         store.write(self.valid_record())
         self.assertEqual(aibs_cli(["status", "--state-root", str(state), "--run-id", "r"]), 0)
 
+    def test_unified_cli_start_admits_and_prepares_dispatch(self):
+        repo, head = self.init_repo()
+        document = self.sample_slice()
+        document["repository"]["base_commit"] = head
+        slice_path = self.root / "slice.json"
+        slice_path.write_text(json.dumps(document), encoding="utf-8")
+        state = self.root / "state"
+        candidate = self.root / "candidate"
+        self.assertEqual(aibs_cli([
+            "start", str(slice_path), "--repository", str(repo), "--state-root", str(state),
+            "--candidate-worktree", str(candidate), "--run-id", "r",
+        ]), 0)
+        self.assertEqual(StateStore(state).read()["state"], "ADMITTED")
+        self.assertTrue((state / "dispatch.json").exists())
+
     def test_status_summary_is_compact_and_deterministic(self):
         state = self.root / "state"
         store = StateStore(state)
