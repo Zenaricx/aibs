@@ -1,0 +1,23 @@
+{
+  "schema_version": "0.1",
+  "project_id": "aibs",
+  "protected_surfaces": [
+    {
+      "name": "lifecycle-state",
+      "paths": ["controller/lifecycle.py", "controller/state_store.py"],
+      "review_required": true
+    },
+    {
+      "name": "authority",
+      "paths": ["AGENTS.md", ".github/**"],
+      "review_required": true
+    }
+  ],
+  "test_rules": [
+    {
+      "paths": ["controller/**", "tools/**", "tests/**"],
+      "commands": ["python -m unittest discover -s tests -q"]
+    }
+  ],
+  "default_test_commands": ["python -m unittest discover -s tests -q"]
+}

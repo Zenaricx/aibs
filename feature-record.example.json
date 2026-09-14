@@ -1,0 +1,9 @@
+{
+  "schema_version": "0.1",
+  "feature_id": "FEATURE-001",
+  "objective": "State the bounded capability to deliver.",
+  "acceptance_criteria": ["State the observable completion condition."],
+  "out_of_scope": ["State what this feature must not change."],
+  "risk_surfaces": [],
+  "status": "READY"
+}
