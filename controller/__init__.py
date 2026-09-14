@@ -12,6 +12,7 @@ from .state_store import (
 from .verification import VerificationError, execute_and_verify, verify_candidate
 from .review_packet import ReviewPacketError, build_review_packet, write_review_packet
 from .finalization import FinalizationError, record_owner_decision
+from .status import StatusError, build_status
 
 __all__ = [
     "InvalidTransition",
