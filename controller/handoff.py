@@ -65,5 +65,7 @@ def ingest_checkpoint(state_root: str | Path, envelope: dict) -> dict:
             if canonical_json_bytes(old) == canonical_json_bytes(envelope): return old
             raise CheckpointError("checkpoint sequence conflict")
         if envelope["sequence"] != old.get("sequence", 0) + 1: raise CheckpointError("checkpoint sequence skipped")
+    elif envelope["sequence"] != 1:
+        raise CheckpointError("first checkpoint sequence must be 1")
     store.write_evidence("checkpoint.json", envelope)
     return envelope
