@@ -7,9 +7,11 @@ from unittest.mock import patch
 from pathlib import Path
 
 from controller.git_candidate import GitCandidateError, create_candidate, repository_identity_matches
+from controller.execution import ExecutionError, acceptance_passed, changed_paths, run_acceptance_commands, validate_changed_paths
 from controller.lifecycle import InvalidTransition, LifecycleState, transition
 from controller.state_store import LockError, StateStore, StateStoreError, freeze_execution_slice
 from tools.aibs_controller import _load_validated_slice, main, validate_operational_paths
+from tools.aibs_verify_candidate import main as verify_candidate
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -314,6 +316,78 @@ class ControllerFoundationTests(unittest.TestCase):
     def test_existing_validator_regression_suite_passes(self):
         result = subprocess.run([PYTHON, str(ROOT / "tests" / "test_validate_execution_slice.py")], cwd=ROOT, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_changed_paths_includes_tracked_and_untracked_paths(self):
+        repo, _ = self.init_repo()
+        (repo / "file.txt").write_text("changed\n", encoding="utf-8")
+        (repo / "new.txt").write_text("new\n", encoding="utf-8")
+        self.assertEqual(changed_paths(repo), ["file.txt", "new.txt"])
+
+    def test_changed_paths_are_checked_against_scope(self):
+        validate_changed_paths(["controller/run.py"], ["controller/**"], ["docs/**"])
+        with self.assertRaisesRegex(ExecutionError, "unauthorised"):
+            validate_changed_paths(["tools/run.py"], ["controller/**"], ["docs/**"])
+        with self.assertRaisesRegex(ExecutionError, "protected"):
+            validate_changed_paths(["docs/run.md"], ["docs/**"], ["docs/**"])
+
+    def test_acceptance_evidence_stops_after_first_failure(self):
+        repo, _ = self.init_repo()
+        evidence = run_acceptance_commands(
+            repo, ["echo first", "cmd /c exit 3", "cmd /c exit 4"]
+        )
+        self.assertEqual([item.returncode for item in evidence], [0, 3])
+        self.assertEqual(evidence[0].stdout, "first\n")
+        self.assertFalse(acceptance_passed(evidence))
+
+    def test_acceptance_evidence_allows_all_passing_commands(self):
+        repo, _ = self.init_repo()
+        evidence = run_acceptance_commands(repo, ["echo ok"])
+        self.assertTrue(acceptance_passed(evidence))
+
+    def prepare_admitted_verification(self, repo, document):
+        state = self.root / "state"
+        store = StateStore(state)
+        record = self.valid_record()
+        record["authorised_base_commit"] = git(repo, "rev-parse", "HEAD")
+        record["execution_slice_hash"] = freeze_execution_slice(document)[0]
+        store.acquire("r")
+        store.write(record)
+        record = store.transition(record, LifecycleState.READY, timestamp="t")
+        store.transition(record, LifecycleState.ADMITTED, timestamp="t")
+        slice_path = self.root / "slice.json"
+        slice_path.write_text(json.dumps(document), encoding="utf-8")
+        return state, slice_path
+
+    def test_candidate_verification_routes_passing_candidate_to_review(self):
+        repo, _ = self.init_repo()
+        (repo / "file.txt").write_text("candidate change\n", encoding="utf-8")
+        document = self.sample_slice()
+        document["scope"]["allowed_paths"] = ["file.txt"]
+        document["acceptance"]["commands"] = ["echo verified"]
+        state, slice_path = self.prepare_admitted_verification(repo, document)
+        self.assertEqual(verify_candidate([str(slice_path), "--state-root", str(state), "--candidate-worktree", str(repo), "--run-id", "r"]), 0)
+        self.assertEqual(StateStore(state).read()["state"], "REVIEW_REQUIRED")
+        self.assertFalse((state / "active-run.lock").exists())
+
+    def test_candidate_verification_records_failed_acceptance(self):
+        repo, _ = self.init_repo()
+        document = self.sample_slice()
+        document["acceptance"]["commands"] = ["cmd /c exit 7"]
+        state, slice_path = self.prepare_admitted_verification(repo, document)
+        self.assertEqual(verify_candidate([str(slice_path), "--state-root", str(state), "--candidate-worktree", str(repo), "--run-id", "r"]), 1)
+        self.assertEqual(StateStore(state).read()["state"], "FAILED")
+        self.assertFalse((state / "active-run.lock").exists())
+
+    def test_candidate_verification_rejects_a_replaced_slice(self):
+        repo, _ = self.init_repo()
+        document = self.sample_slice()
+        state, slice_path = self.prepare_admitted_verification(repo, document)
+        document["scope"]["allowed_paths"] = ["**"]
+        slice_path.write_text(json.dumps(document), encoding="utf-8")
+        with self.assertRaisesRegex(StateStoreError, "does not match admitted"):
+            verify_candidate([str(slice_path), "--state-root", str(state), "--candidate-worktree", str(repo), "--run-id", "r"])
+        self.assertEqual(StateStore(state).read()["state"], "ADMITTED")
+        self.assertTrue((state / "active-run.lock").exists())
 
 
 if __name__ == "__main__":
