@@ -19,6 +19,7 @@ if str(ROOT) not in sys.path:
 from controller.git_candidate import create_candidate
 from controller.lifecycle import LifecycleState
 from controller.state_store import StateStore, freeze_execution_slice
+from controller.handoff import dispatch_packet, ingest_checkpoint
 
 
 def validate_operational_paths(repository: Path, state_root: Path, candidate_worktree: Path) -> None:
@@ -81,10 +82,28 @@ def _record(document: dict, run_id: str, digest: str) -> dict:
         "state": LifecycleState.DRAFT.value,
         "transition_history": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
+        "candidate_worktree": "",
+        "candidate_head": "",
+        "source_head": "",
     }
 
 
 def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] == "dispatch":
+        parser = argparse.ArgumentParser()
+        parser.add_argument("dispatch"); parser.add_argument("slice_json", type=Path); parser.add_argument("--state-root", required=True, type=Path)
+        args = parser.parse_args(argv)
+        store = StateStore(args.state_root); record = store.read()
+        frozen = json.loads((Path(args.state_root) / "execution-slice.json").read_text(encoding="utf-8"))
+        print(json.dumps(dispatch_packet(frozen, record), sort_keys=True, separators=(",", ":")))
+        return 0
+    if argv and argv[0] == "checkpoint":
+        parser = argparse.ArgumentParser()
+        parser.add_argument("checkpoint"); parser.add_argument("checkpoint_json", type=Path); parser.add_argument("--state-root", required=True, type=Path)
+        args = parser.parse_args(argv)
+        envelope = json.loads(args.checkpoint_json.read_text(encoding="utf-8"))
+        ingest_checkpoint(args.state_root, envelope); print("PASS: checkpoint ingested"); return 0
     parser = argparse.ArgumentParser(description="AIBS Phase A controller foundation")
     parser.add_argument("slice_json", type=Path)
     parser.add_argument("--repository", required=True, type=Path)
@@ -102,6 +121,7 @@ def main(argv=None) -> int:
     try:
         record = _record(document, args.run_id, digest)
         store.write(record)
+        store.write_evidence("execution-slice.json", document)
         now = datetime.now(timezone.utc).isoformat()
         record = store.transition(record, LifecycleState.READY, timestamp=now)
         record = store.transition(record, LifecycleState.ADMITTED, timestamp=now)
@@ -112,6 +132,8 @@ def main(argv=None) -> int:
                 document["repository"]["identifier"],
                 document["repository"]["base_commit"],
             )
+            record.update({"candidate_worktree": candidate["candidate_worktree"], "candidate_head": candidate["base_commit"], "source_head": candidate["source_head"]})
+            store.write(record)
         except Exception as candidate_error:
             try:
                 record = store.transition(

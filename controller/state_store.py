@@ -146,6 +146,22 @@ class StateStore:
         validate_lifecycle_record(record)
         return record
 
+    def write_evidence(self, name: str, document: dict) -> None:
+        if Path(name).name != name or not name.endswith(".json"):
+            raise StateStoreError("invalid evidence filename")
+        data = canonical_json_bytes(document)
+        temporary_name = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="wb", dir=self.root, prefix=".evidence-", suffix=".tmp", delete=False) as handle:
+                temporary_name = handle.name
+                handle.write(data); handle.flush(); os.fsync(handle.fileno())
+            os.replace(temporary_name, self.root / name)
+        except OSError as exc:
+            if temporary_name:
+                try: os.unlink(temporary_name)
+                except OSError: pass
+            raise StateStoreError(f"could not atomically persist evidence: {exc}") from exc
+
     def transition(self, record: dict, target: LifecycleState | str, *, timestamp: str) -> dict:
         current = LifecycleState(record["state"])
         if current in TERMINAL_STATES:
