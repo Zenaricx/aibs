@@ -1,8 +1,10 @@
 import json
+import io
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import patch
 from pathlib import Path
 
@@ -20,6 +22,7 @@ from tools.aibs_verify_candidate import main as verify_candidate
 from tools.aibs_record_review import main as record_review
 from tools.aibs_seal_candidate import main as seal_candidate_tool
 from tools.aibs import main as aibs_cli
+from tools.aibs_status import main as aibs_status
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -499,6 +502,22 @@ class ControllerFoundationTests(unittest.TestCase):
         store = StateStore(state)
         store.write(self.valid_record())
         self.assertEqual(aibs_cli(["status", "--state-root", str(state), "--run-id", "r"]), 0)
+
+    def test_status_summary_is_compact_and_deterministic(self):
+        state = self.root / "state"
+        store = StateStore(state)
+        store.write(self.valid_record())
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(aibs_status(["--state-root", str(state), "--summary"]), 0)
+        self.assertEqual(json.loads(output.getvalue()), {
+            "run_id": "r",
+            "state": "DRAFT",
+            "verification_outcome": None,
+            "review_decision": None,
+            "candidate_commit": None,
+            "remote_branch": None,
+        })
 
     def test_accepted_candidate_is_sealed_to_a_local_branch_and_commit(self):
         repo, _ = self.init_repo()
