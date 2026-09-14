@@ -16,6 +16,7 @@ from controller.state_store import LockError, StateStore, StateStoreError, freez
 from tools.aibs_controller import _load_validated_slice, main, validate_operational_paths
 from tools.aibs_verify_candidate import main as verify_candidate
 from tools.aibs_record_review import main as record_review
+from tools.aibs_seal_candidate import main as seal_candidate_tool
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -465,6 +466,22 @@ class ControllerFoundationTests(unittest.TestCase):
         store.transition(record, LifecycleState.OWNER_ACCEPTANCE, timestamp="t")
         self.assertEqual(record_review(["--state-root", str(state), "--run-id", "r", "--reviewer", "owner", "--decision", "accept"]), 0)
         self.assertEqual(StateStore(state).read()["state"], "ACCEPTED")
+
+    def test_accepted_candidate_is_sealed_to_a_local_branch_and_commit(self):
+        repo, _ = self.init_repo()
+        (repo / "file.txt").write_text("candidate change\n", encoding="utf-8")
+        document = self.sample_slice()
+        document["scope"]["allowed_paths"] = ["file.txt"]
+        document["acceptance"]["commands"] = ["echo verified"]
+        state, slice_path = self.prepare_admitted_verification(repo, document)
+        self.assertEqual(verify_candidate([str(slice_path), "--state-root", str(state), "--candidate-worktree", str(repo), "--run-id", "r"]), 0)
+        self.assertEqual(record_review(["--state-root", str(state), "--run-id", "r", "--reviewer", "owner", "--decision", "accept"]), 0)
+        self.assertEqual(seal_candidate_tool([str(slice_path), "--state-root", str(state), "--candidate-worktree", str(repo), "--run-id", "r", "--branch", "aibs/candidate/r"]), 0)
+        self.assertEqual(git(repo, "branch", "--show-current"), "aibs/candidate/r")
+        self.assertEqual(git(repo, "status", "--porcelain"), "")
+        sealed = json.loads((state / "seal.json").read_text(encoding="utf-8"))
+        self.assertEqual(sealed["branch"], "aibs/candidate/r")
+        self.assertEqual(sealed["candidate_commit"], git(repo, "rev-parse", "HEAD"))
 
 
 if __name__ == "__main__":
