@@ -12,6 +12,7 @@ from controller.dispatch import DispatchError, build_dispatch, dispatch_hash, pe
 from controller.evidence import build_verification_evidence, load_verification_evidence, persist_verification_evidence
 from controller.review import ReviewError, build_review_record
 from controller.publish import PublishError, validate_publication_inputs
+from controller.status import StatusError, read_run_status
 from controller.lifecycle import InvalidTransition, LifecycleState, transition
 from controller.state_store import LockError, StateStore, StateStoreError, freeze_execution_slice
 from tools.aibs_controller import _load_validated_slice, main, validate_operational_paths
@@ -467,6 +468,30 @@ class ControllerFoundationTests(unittest.TestCase):
         store.transition(record, LifecycleState.OWNER_ACCEPTANCE, timestamp="t")
         self.assertEqual(record_review(["--state-root", str(state), "--run-id", "r", "--reviewer", "owner", "--decision", "accept"]), 0)
         self.assertEqual(StateStore(state).read()["state"], "ACCEPTED")
+
+    def test_status_aggregates_lifecycle_and_optional_records_read_only(self):
+        state = self.root / "state"
+        store = StateStore(state)
+        record = self.valid_record()
+        store.write(record)
+        status = read_run_status(state, "r")
+        self.assertEqual(status["state"], "DRAFT")
+        self.assertIsNone(status["verification"])
+        self.assertEqual(set(status), {"run_id", "state", "execution_slice_hash", "repository_identifier", "authorised_base_commit", "verification", "review", "seal", "publication"})
+
+    def test_status_rejects_mismatched_optional_record(self):
+        state = self.root / "state"
+        store = StateStore(state)
+        store.write(self.valid_record())
+        (state / "review.json").write_text(json.dumps({"run_id": "other", "execution_slice_hash": "a" * 64}), encoding="utf-8")
+        with self.assertRaisesRegex(StatusError, "does not match lifecycle"):
+            read_run_status(state)
+
+    def test_status_does_not_create_missing_state(self):
+        state = self.root / "missing"
+        with self.assertRaises(StatusError):
+            read_run_status(state)
+        self.assertFalse(state.exists())
 
     def test_accepted_candidate_is_sealed_to_a_local_branch_and_commit(self):
         repo, _ = self.init_repo()
