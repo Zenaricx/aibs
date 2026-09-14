@@ -11,6 +11,7 @@ from controller.execution import ExecutionError, acceptance_passed, changed_path
 from controller.dispatch import DispatchError, build_dispatch, dispatch_hash, persist_dispatch
 from controller.evidence import build_verification_evidence, load_verification_evidence, persist_verification_evidence
 from controller.review import ReviewError, build_review_record
+from controller.publish import PublishError, validate_publication_inputs
 from controller.lifecycle import InvalidTransition, LifecycleState, transition
 from controller.state_store import LockError, StateStore, StateStoreError, freeze_execution_slice
 from tools.aibs_controller import _load_validated_slice, main, validate_operational_paths
@@ -482,6 +483,9 @@ class ControllerFoundationTests(unittest.TestCase):
         sealed = json.loads((state / "seal.json").read_text(encoding="utf-8"))
         self.assertEqual(sealed["branch"], "aibs/candidate/r")
         self.assertEqual(sealed["candidate_commit"], git(repo, "rev-parse", "HEAD"))
+        self.assertEqual(validate_publication_inputs(StateStore(state).read(), sealed, repo, "phase-a/r"), repo.resolve())
+        with self.assertRaisesRegex(PublishError, "phase-a/ prefix"):
+            validate_publication_inputs(StateStore(state).read(), sealed, repo, "main")
 
 
 if __name__ == "__main__":

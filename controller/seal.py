@@ -60,7 +60,12 @@ def seal_candidate(document: dict, record: dict, state_root: str | Path, candida
         commit = _git(candidate, "rev-parse", "HEAD")
     except Exception:
         raise
-    return {"branch": branch, "candidate_commit": commit}
+    return {
+        "run_id": record["run_id"],
+        "execution_slice_hash": record["execution_slice_hash"],
+        "branch": branch,
+        "candidate_commit": commit,
+    }
 
 
 def persist_seal(state_root: str | Path, seal: dict) -> Path:
