@@ -534,6 +534,18 @@ class ControllerFoundationTests(unittest.TestCase):
             "remote_branch": None,
         })
 
+    def test_status_script_runs_directly(self):
+        state = self.root / "state"
+        StateStore(state).write(self.valid_record())
+        result = subprocess.run(
+            [PYTHON, str(ROOT / "tools" / "aibs_status.py"), "--state-root", str(state), "--summary"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["state"], "DRAFT")
+
     def test_accepted_candidate_is_sealed_to_a_local_branch_and_commit(self):
         repo, _ = self.init_repo()
         (repo / "file.txt").write_text("candidate change\n", encoding="utf-8")
